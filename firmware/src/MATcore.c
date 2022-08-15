@@ -1,4 +1,6 @@
-//須田編集
+/*
+	通信タスク
+*/
 #include <stdio.h>
 #include <stddef.h>                     // Defines NULL
 #include <stdbool.h>                    // Defines true
@@ -8,17 +10,18 @@
 #include "definitions.h"                // SYS function prototypes
 #include "moni.h" 
 #include "gpioexp.h" 
+#include "rtc.h" 
 #include "w25q128jv.h"
-void command_main(void);
+void DLCMatTimerInt();
 void DLCMatState();
+void command_main();
 void _GO_IDLE(){	command_main();DLCMatState();SYS_Tasks();}
 void Moni();
 void DLCMatConfigDefault(),DLCMatStatusDefault(),DLCMatReortDefault();
 void DLCMatPostConfig(),DLCMatPostStatus(),DLCMatPostReport();
+void DLCMatTimerset(int tmid,int cnt );
 extern	char s_command_version[];
 int DLCMatRecvDisp();
-#define MAIN_VERSION "Ver 00.10 "
-char 	_Main_version[32] = {MAIN_VERSION};
 char 	zLogOn=1;
 char 	DLC_MatSleep;
 char 	DLC_MatResBuf[2000];
@@ -28,6 +31,12 @@ int		DLC_MatLineIdx;
 uchar	DLC_Matfact,DLC_MatState;
 char	DLC_MatDateTime[32];
 char	DLC_MatRadioDensty[64];
+char	DLC_MatNUM[16];
+char	DLC_MatIMEI[16];
+int		DLC_MatTmid;
+struct {
+	int	cnt;
+} DLC_MatTimer;
 char getch()
 {
 	char	c;
@@ -46,14 +55,57 @@ void putch( char c )
 			return;
 	}
 }
+/* 
+	Function:通信タスクの変数初期化、TC5(内部タイマー)のコールバック登録
+*/
 void DLCMatInit()
 {
-	strcat( _Main_version,__DATE__ );
-	strcat( _Main_version," " );
-	strcat( _Main_version,__TIME__ );
 	DLCMatConfigDefault();
 	DLCMatStatusDefault();
 	DLCMatReortDefault();
+	TC5_TimerCallbackRegister( (TC_TIMER_CALLBACK)DLCMatTimerInt, (uintptr_t)0 );
+	TC5_TimerStart();
+	DLCMatTimerset( 0,3000 );
+}
+/*
+	Function:通信タスクにTO通知
+*/
+void DLCMatNoty(int tmid)
+{
+	DLC_MatTmid = tmid;
+}
+/*
+	Function:通信タスクのTO通知の確認
+*/
+int	DLCMatTmChk(int tmid)
+{
+	if( DLC_MatTmid ){
+		if( DLC_MatTimer.cnt == 0 ){
+			DLC_MatTmid = 0;
+			return 1;
+		}
+	}
+	return 0;
+}
+void DLCMatTimerInt()
+{
+	if( DLC_MatTimer.cnt != 0 ){
+		DLC_MatTimer.cnt--;
+		if( DLC_MatTimer.cnt == 0 )
+			DLCMatNoty(1);
+//	putch('t');
+	}
+}
+/*
+	Function:通信タスクのタイマー登録
+*/
+void DLCMatTimerset(int tmid,int cnt )
+{
+	DLC_MatTimer.cnt = cnt;
+}
+void DLCMatTimerClr(int tmid )
+{
+	DLC_MatTimer.cnt = 0;
 }
 void DLCMatLog(int len)
 {
@@ -118,12 +170,13 @@ int	DLCMatCharInt( char *p,char *title )
 #define		MATC_FACT_RSR	7
 #define		MATC_FACT_OPN	8
 #define		MATC_FACT_CLS	9
-#define		MATC_FACT_HTTP	10
-#define		MATC_FACT_TO	11
-#define		MATC_FACT_WUP	12
-#define		MATC_FACT_FOTA	13
-#define		MATC_FACT_FTP	14
-#define		MATC_FACT_SLP	15
+#define		MATC_FACT_DATA	10
+#define		MATC_FACT_DSC	11
+#define		MATC_FACT_TO	12
+#define		MATC_FACT_WUP	13
+#define		MATC_FACT_FOTA	14
+#define		MATC_FACT_FTP	15
+#define		MATC_FACT_SLP	16
 /* 状態 */
 #define		MATC_STATE_INIT	0
 #define		MATC_STATE_IDLE	1
@@ -149,25 +202,28 @@ void MTRdy()
 {
 	DLC_MatLineIdx = 0;
 	DLCMatSend( "AT$VER\r" );
-	APP_delay(3000);
+	DLCMatTimerset( 0,300 );
 	DLC_MatState = MATC_STATE_IDLE;
 }
 void MTVrT()
 {
 	DLC_MatLineIdx = 0;
 	DLCMatSend( "AT$VER\r" );
-	APP_delay(1000);
+	DLCMatTimerset( 0,100 );
 }
 void MTVer()
 {
 	DLC_MatLineIdx = 0;
 	DLCMatSend( "AT$IMEI\r" );
+	DLCMatSend( "AT$NUM\r" );
+	DLCMatTimerset( 0,500 );
 	DLC_MatState = MATC_STATE_IMEI;
 }
 void MTimei()
 {
 	DLC_MatLineIdx = 0;
 	DLCMatSend( "AT$SETAPN,soracom.io,sora,sora,PAP\r" );
+	DLCMatTimerset( 0,300 );
 	DLC_MatState = MATC_STATE_APN;
 }
 void MTapn()
@@ -175,18 +231,21 @@ void MTapn()
 	DLC_MatLineIdx = 0;
 //	DLCMatSend( "AT$SETSERVER,karugamosoft.ddo.jp,9999\r" );
 	DLCMatSend( "AT$SETSERVER,beam.soracom.io,8888\r" );
+	DLCMatTimerset( 0,300 );
 	DLC_MatState = MATC_STATE_SVR;
 }
 void MTserv()
 {
 	DLC_MatLineIdx = 0;
 	DLCMatSend( "AT$CONNECT\r" );
+	DLCMatTimerset( 0,12000 );
 	DLC_MatState = MATC_STATE_CONG;
 }
 void MTcong()
 {
 	DLC_MatLineIdx = 0;
 	DLCMatSend( "AT$CONNECT?\r" );
+	DLCMatTimerset( 0,3000 );
 	DLC_MatState = MATC_STATE_COND;
 }
 void MTtime()
@@ -194,6 +253,7 @@ void MTtime()
 	memcpy( DLC_MatDateTime,DLC_MatLineBuf,DLC_MatLineIdx );
 	DLC_MatLineIdx = 0;
 	DLCMatSend( "AT$TIME\r" );
+	DLCMatTimerset( 0,300 );
 }
 void MTrsrp()
 {
@@ -205,15 +265,17 @@ void MTopn1()
 	memcpy( DLC_MatRadioDensty,DLC_MatLineBuf,DLC_MatLineIdx );
 	DLC_MatLineIdx = 0;
 	DLCMatSend( "AT$OPEN\r" );
+	DLCMatTimerset( 0,1500 );
 	DLC_MatState = MATC_STATE_OPN1;
 }
 void MTcnfg()
 {
 	DLC_MatLineIdx = 0;
 	DLCMatPostConfig();
+	DLCMatTimerset( 0,3000 );
 	DLC_MatState = MATC_STATE_CNFG;
 }
-void MTrecv()
+void MTdata()
 {
 	int	rt;
 	rt = DLCMatRecvDisp();
@@ -237,6 +299,7 @@ void MTstst()
 {
 	DLC_MatLineIdx = 0;
 	DLCMatPostStatus();
+	DLCMatTimerset( 0,3000 );
 	DLC_MatState = MATC_STATE_STAT;
 }
 void MTcls2()
@@ -249,23 +312,37 @@ void MTrprt()
 {
 	DLC_MatLineIdx = 0;
 	DLCMatPostReport();
+	DLCMatTimerset( 0,3000 );
 	DLC_MatState = MATC_STATE_RPT;
 }
 void MTcls3()
 {
 	DLC_MatLineIdx = 0;
+	DLCMatSend( "AT$DISCONNECT\r" );
+	DLCMatTimerset( 0,300 );
+}
+void MTdisc()
+{
+	DLC_MatLineIdx = 0;
 	DLC_MatSleep = 1;
-	PORT_GroupWrite( PORT_GROUP_1,0x1<<10,0 );
+	DLCMatTimerClr(1);
+	PORT_GroupWrite( PORT_GROUP_1,0x1<<10,0 );						/* Sleep! */
 	DLC_MatState = MATC_STATE_SLP;
 }
-void MTslp0()
+void MTslep()
 {
 	DLC_MatLineIdx = 0;
 	putst("【Sleep】\r\n");
+	DLCMatTimerset( 0,3000 );										/* For Test afer 30s Go Wake */
+}
+void MTslp1()
+{
+	PORT_GroupWrite( PORT_GROUP_1,0x1<<10,-1 );						/* Wake! */
 }
 void MTwake()
 {
-	PORT_GroupWrite( PORT_GROUP_1,0x1<<10,-1 );
+	putst("【Wake】\r\n");
+	PORT_GroupWrite( PORT_GROUP_1,0x1<<10,-1 );						/* Wake! */
 }
 struct {
 	uchar	wx;
@@ -287,29 +364,36 @@ void MatMsgSend( int msg )
 	DLC_MatMsg.msg[DLC_MatMsg.wx] = msg;
 	DLC_MatMsg.wx &= 0x1F;
 }
-void	 (*MTjmp[16][19])() = {
+void DLCMatClockDisplay(char *s)
+{
+	RTC_DATETIME dt;
+	RTC_getDatetime( &dt );
+	sprintf( s,"%02d/%02d/%02d %02d:%02d:%02d",(int)dt.year,(int)dt.month,(int)dt.day,(int)dt.hour,(int)dt.minute,(int)dt.second );
+}
+void	 (*MTjmp[17][19])() = {
 /*					  0         1       2      3       4       5       6       7       8       9       10      11      12      13      14      15      16      17   18     */
-/*				  	 INIT    IDLE    IMEI    APN     SVR     CONG    COND    OPN1    CNFG    OPN2    STAT    OPN3    REPT    SLEEP   FOAT    FCON    FTP     MNT     ERR   */
+/*				  	 INIT    IDLE    IMEI    APN     SVR     CONG    COND    OPN1    CNFG    OPN2    STAT    OPN3    REPT    SLEEP   FOTA    FCON    FTP     MNT     ERR   */
 /* MATCORE RDY 0 */{ MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy,  MTRdy  },
-/* ERROR       1 */{ ______, MTVrT,  ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
+/* ERROR       1 */{ ______, MTVrT,  ______, ______, ______, MTserv, ______, ______, ______, ______, ______, ______, MTcls3, ______, ______, ______, ______, ______, ______ },
 /* $VER		   2 */{ ______, MTVer,  ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
 /* $NUM		   3 */{ ______, ______, MTimei, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
 /* OK          4 */{ ______, ______, ______, MTapn,  MTserv, MTcong, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
-/* CONNECT:1   5 */{ ______, ______, ______, ______, ______, ______, MTtime, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
+/* $CONNECT:1  5 */{ ______, ______, ______, ______, ______, ______, MTtime, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
 /* $TIME       6 */{ ______, ______, ______, ______, ______, ______, MTrsrp, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
 /* $RSRP       7 */{ ______, ______, ______, ______, ______, ______, MTopn1, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
-/* $OPEN       8 */{ ______, ______, ______, ______, ______, ______, ______, MTcnfg, ______, MTstst, ______, MTrprt, ______, ______, ______, ______, ______, ______, ______ },
+/* $OPEN       8 */{ ______, ______, ______, ______, ______, ______, ______, MTcnfg, ______, MTstst, ______, MTrprt, ______, MTserv, ______, ______, ______, ______, ______ },
 /* $CLOSE      9 */{ ______, ______, ______, ______, ______, ______, ______, ______, MTcls1, ______, MTcls2, ______, MTcls3, ______, ______, ______, ______, ______, ______ },
-/* HTTP       10 */{ ______, ______, ______, ______, ______, ______, ______, ______, MTrecv, ______, MTrecv, ______, MTrecv, ______, ______, ______, ______, ______, ______ },
-/* TimOut     11 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
-/* WAKEUP     12 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, MTwake, ______, ______, ______, ______, ______ },
-/* FOTA       13 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
-/* FTP        14 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
-/* $SLEEP     15 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, MTslp0, ______, ______, ______, ______, ______ },
+/* $RECVDATA  10 */{ ______, ______, ______, ______, ______, ______, ______, ______, MTdata, ______, MTdata, ______, MTdata, ______, ______, ______, ______, ______, ______ },
+/* $CONNECT:0 11 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, MTdisc, ______, ______, ______, ______, ______, ______ },
+/* TimOut     12 */{ MTRdy,  MTVrT,  MTVer,  MTimei, MTapn,  MTserv, ______, ______, ______, ______, ______, ______, ______, MTslp1, ______, ______, ______, ______, ______ },
+/* WAKEUP     13 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, MTwake, ______, ______, ______, ______, ______ },
+/* FOTA       14 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
+/* FTP        15 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
+/* $SLEEP     16 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, MTslep, ______, ______, ______, ______, ______ },
 							};
 void DLCMatState()
 {
-	char	*p;
+	char	*p,*q;
 	int 	len;
 	len = SERCOM5_USART_Read( (uint8_t*)&DLC_MatLineBuf[DLC_MatLineIdx],sizeof( DLC_MatLineBuf) );				/* MATcoreから入力 */
 	DLCMatLog( len );
@@ -331,13 +415,26 @@ void DLCMatState()
 		}
 	}
 	if( DLC_MatLineIdx >= 21 ){								/* $NUM:022001004788412 */
-		if( strstr( (char*)DLC_MatLineBuf,"$NUM:" )){
-			DLC_Matfact = MATC_FACT_NUM;
+		p = strstr( (char*)DLC_MatLineBuf,"$NUM:" );
+		if( p ){
+			q = strchr( p,'\r' );							/* <cr>まで受信済み */
+			if( q ){
+				*q = 0;
+				strcpy( DLC_MatNUM,"81" );
+				strcat( DLC_MatNUM, &p[6] );
+				DLC_Matfact = MATC_FACT_NUM;
+			}
 		}
 	}
 	if( DLC_MatLineIdx >= 22 ){								/* $IMEI:356766100967880 */
-		if( strstr( (char*)DLC_MatLineBuf,"$IMEI:" )){
-			DLC_Matfact = MATC_FACT_NUM;
+		p = strstr( (char*)DLC_MatLineBuf,"$IMEI:" );
+		if( p ){
+			q = strchr( p,'\r' );							/* <cr>まで受信済み */
+			if( q ){
+				*q = 0;
+				strcpy( DLC_MatIMEI,&q[5] );
+				DLC_Matfact = MATC_FACT_NUM;
+			}
 		}
 	}
 	if( DLC_MatLineIdx == 4 ){
@@ -355,15 +452,25 @@ void DLCMatState()
 		}
 	}
 	if( DLC_MatLineIdx >= 10 ){
-		if( strstr( (char*)DLC_MatLineBuf,"$CONNECT:1\r" )){
+		if( strstr( (char*)DLC_MatLineBuf,"$CONNECT:1\r" ))
 			DLC_Matfact = MATC_FACT_CON;
-		}
+		if( strstr( (char*)DLC_MatLineBuf,"$CONNECT:0\r" ))
+			DLC_Matfact = MATC_FACT_DSC;
 	}
 	if( DLC_MatLineIdx >= 24 ){								/* $TIME:22/08:03,18:16:32 */
 		p = strstr( (char*)DLC_MatLineBuf,"$TIME:2" );
 		if( p ){
-			if( strchr( p,'\r' ))							/* <cr>まで受信済み */
+			if( strchr( p,'\r' )){							/* <cr>まで受信済み */
 				DLC_Matfact = MATC_FACT_TIM;
+				RTC_DATETIME dt;
+				dt.year   = (p[6]-'0')*10 + (p[7]-'0');
+				dt.month  = (p[9]-'0')*10 + (p[10]-'0');
+				dt.day	  = (p[12]-'0')*10 + (p[13]-'0');
+				dt.hour	  = (p[15]-'0')*10 + (p[16]-'0');
+				dt.minute = (p[18]-'0')*10 + (p[19]-'0');
+				dt.second = (p[21]-'0')*10 + (p[22]-'0');
+				RTC_setDateTime( dt );
+			}
 		}
 	}
 	if( DLC_MatLineIdx >= 37 ){								/* $RSRP:-nn<cr>$RSRQ:-n<cr>$RSSI:-nn<cr>$SINR:nn<cr> */
@@ -376,9 +483,6 @@ void DLCMatState()
 		}
 	}
 	if( DLC_MatLineIdx >= 6 ){
-		if( strstr( (char*)DLC_MatLineBuf,"$WAKE\r" )){
-			DLC_Matfact = MATC_FACT_OPN;
-		}
 		if( strstr( (char*)DLC_MatLineBuf,"$OPEN\r" )){
 			DLC_Matfact = MATC_FACT_OPN;
 		}
@@ -396,132 +500,42 @@ void DLCMatState()
 			DLC_Matfact = MATC_FACT_SLP;
 		}
 	}
+	if( DLC_MatLineIdx >= 8 ){
+		if( strstr( (char*)DLC_MatLineBuf,"$WAKEUP\r" )){
+			DLC_Matfact = MATC_FACT_OPN;
+		}
+	}
 	if( DLC_MatLineIdx >= 15 ){
 		DLC_MatLineBuf[DLC_MatLineIdx] = 0;
 		if( strstr( (char*)DLC_MatLineBuf,"$RECVDATA:" )){
 			p = strchr( (char*)DLC_MatLineBuf,'\"' );
 			if( p > 0 ){
 				if( strstr( p+2,"\"\r" )){
-					DLC_Matfact = MATC_FACT_HTTP;
+					DLC_Matfact = MATC_FACT_DATA;
 				}
 			}
 		}
 	}
 	if( DLC_Matfact == 0xff ){
-		switch( MatGetMsgStack() ){
-		case 1:
+		if( DLCMatTmChk( 0 ) )
 			DLC_Matfact = MATC_FACT_TO;
-			break;
-		case 2:
-			DLC_Matfact = MATC_FACT_WUP;
-			break;
-		default:
-			return;
+		else {
+			switch( MatGetMsgStack() ){
+			case 1:
+				DLC_Matfact = MATC_FACT_TO;
+				break;
+			case 2:
+				DLC_Matfact = MATC_FACT_WUP;
+				break;
+			default:
+				return;
+			}
 		}
 	}
 	if( DLC_Matfact != 0xff ){
-		putst("【");puthxb( DLC_Matfact );putch(':');puthxb( DLC_MatState );putst("】\r\n");
+		char	s[20];
+		DLCMatClockDisplay(s);putst( s );putst("【");puthxb( DLC_Matfact );putch(':');puthxb( DLC_MatState );putst("】\r\n");
 		(*MTjmp[DLC_Matfact][DLC_MatState])();
-	}
-}
-bool command_getch(char * character_p)
-{
-	bool result = false;
-	if (APP_readUSB( (uint8_t*)character_p, 1)) {
-		result = true;
-	}
-	return result;
-}
-bool command_putch(char character)
-{
-	bool result = false;
-	if (APP_writeUSB( (uint8_t const*)&character, 1)) {
-	    result = true;
-	}
-	return result;
-}
-#define command_COMMAND_BUFFER_SIZE 128
-typedef struct {
-    int write_index;
-    int read_index;
-    char buffer[command_COMMAND_BUFFER_SIZE];
-} command_command;
-static command_command s_command_command;
-//-----------------------------------------------------------------------------
-// 受信バッファから1Line取得
-//-----------------------------------------------------------------------------
-bool command_sci_get_line(void)
-{
-	char c;
-	bool result = false;
-	while (command_getch(&c) == true) {
-		command_putch(c);
-		if (c == '\n') {				// ラインフィード(無視)
-			continue;
-		}
-		if (c == '\b') {				// バックスペース
-			if (s_command_command.write_index) {
-				s_command_command.write_index--;
-			}
-			continue;
-		}
-		s_command_command.buffer[s_command_command.write_index++] = toupper(c);
-		if (c == '\r') {				// コマンド検出
-			s_command_command.buffer[s_command_command.write_index] = 0x00; 
-			s_command_command.write_index = 0;
-			result = true;
-			break;
-		}
-	}
-	return result;
-}
-void command_software_reset(void)
-{
-#if 0
-	uint32_t app_start_address;
-	app_start_address = *(uint32_t *) (4);
-	SYS_INT_Disable(); /* 割り込み禁止 */
-	/* Rebase the Stack Pointer */
-	__set_MSP(*(uint32_t *) 0);
-	/* Rebase the vector table base address */
-	SCB->VTOR = ((uint32_t) 0);
-	/* Jump to application Reset Handler in the application */
-	asm("bx %0"::"r"(app_start_address));
-#else
-	NVMCTRL_RowErase( 0x8000 );
-	__NVIC_SystemReset();
-#endif
-}
-void command_main(void)
-{
-	unsigned char *p;
-	p = (unsigned char*)0x20007fff;
-	while (command_sci_get_line() == true) {   // コマンドバッファから１line取得
-		if (strcmp(s_command_command.buffer , "!!DOWNLOADFIRM\r") == 0) {
-			*p = 1;
-			APP_printlnUSB("\r\nOK\r\n");
-			command_software_reset();
-			break;
-		}
-		if (strcmp(s_command_command.buffer , "!!DOWNLOADBOOT\r") == 0) {
-			*p = 2;
-			APP_printlnUSB("\r\nOK\r\n");
-			command_software_reset();
-			break;
-		}
-		if (strcmp(s_command_command.buffer , "!!VERSION\r") == 0) {
-			APP_printlnUSB( _Main_version );
-			break;
-		}
-		if (strcmp(s_command_command.buffer , "!!RESET\r") == 0) {
-			APP_printlnUSB("\r\nOK\r\n");
-			command_software_reset();
-			break;
-		}
-		if (memcmp(s_command_command.buffer , "AT", 2) == 0) {
-			APP_printlnUSB("\r\nOK\r\n");
-			break;
-		}
 	}
 }
 static char help[] = {"\r\nL:LED test \
@@ -583,7 +597,6 @@ struct {
 	float	TxType;
 } DLC_MatSgtatusPara;
 struct {
-	char	Time[19];
 	float	Value_ch1;
 	float	Value_ch2;
 	char	Alert[2];
@@ -591,7 +604,7 @@ struct {
 int	DLC_MatReportStack;
 void DLCMatConfigDefault()
 {
-	DLC_MatConfigPara.LoggerSerialNo 		= 3423423;
+	DLC_MatConfigPara.LoggerSerialNo 		= 1234567;
 	DLC_MatConfigPara.Interval 				= 60;
 	DLC_MatConfigPara.ReprotInterval 		= 300;
 	DLC_MatConfigPara.IntervalAlert 		= 30;
@@ -628,7 +641,7 @@ void DLCMatConfigDefault()
 }
 void DLCMatStatusDefault()
 {
-	DLC_MatSgtatusPara.LoggerSerialNo 		= 4324232;
+	DLC_MatSgtatusPara.LoggerSerialNo 		= 1234567;
 	strcpy( DLC_MatSgtatusPara.IMEI,"440103256497859" );
 	strcpy( DLC_MatSgtatusPara.MSISDN,"812001003404286" );
 	strcpy( DLC_MatSgtatusPara.Version,"01.04" );
@@ -647,7 +660,6 @@ void DLCMatStatusDefault()
 void DLCMatReortDefault()
 {
 	for(int i=0;i<100;i++){
-		strcpy( DLC_MatReportData[i].Time,"2022-07-05 10:16:00" );
 		DLC_MatReportData[i].Value_ch1 = i+0.1;
 		DLC_MatReportData[i].Value_ch2 = i+0.2;
 		DLC_MatReportData[i].Alert[0] = '0';
@@ -665,7 +677,6 @@ void DLCMatPostConfig()
 	int		i;
 	
 	strcpy( http_tmp,http_Head );
-//	strcat( http_tmp,"{" );
 	strcat( http_tmp,"{\"Config\":{" );
 	sprintf( tmp,"\"LoggerSerialNo\":%d,"		,DLC_MatConfigPara.LoggerSerialNo );		strcat( http_tmp,tmp );
 	sprintf( tmp,"\"Interval\":%d,"				,DLC_MatConfigPara.Interval );				strcat( http_tmp,tmp );
@@ -702,7 +713,6 @@ void DLCMatPostConfig()
 	sprintf( tmp,"\"MeaKind_ch2\":\"%s\","		,DLC_MatConfigPara.MeaKind_ch2 );			strcat( http_tmp,tmp );
 	sprintf( tmp,"\"Chattering_ch2\":%d"		,DLC_MatConfigPara.Chattering_ch2  );		strcat( http_tmp,tmp );
 	strcat( http_tmp,"}}" );
-//	i = (int)(strchr(http_tmp,'}')-strchr(http_tmp,'{'));
 	i = (int)(strchr(http_tmp,'}')-strstr(http_tmp,"{\"Config\":{"))+1;
 	if( i > 0 ){
 		p = strstr( http_tmp,"Length:    " );
@@ -734,8 +744,9 @@ void DLCMatPostStatus()
 	DLC_MatSgtatusPara.RSRQ					= DLCMatCharInt( DLC_MatRadioDensty,"RSRQ:" );
 	DLC_MatSgtatusPara.RSSI					= DLCMatCharInt( DLC_MatRadioDensty,"RSSI:" );
 	DLC_MatSgtatusPara.SINR					= DLCMatCharInt( DLC_MatRadioDensty,"SINR:" );
+	strcpy( DLC_MatSgtatusPara.MSISDN,DLC_MatNUM );
+	strcpy( DLC_MatSgtatusPara.IMEI,DLC_MatIMEI );
 	strcpy( http_tmp,http_Head );
-//	strcat( http_tmp,"{" );
 	strcat( http_tmp,"{\"Status\":{" );
 	sprintf( tmp,"\"LoggerSerialNo\":%d,"		,DLC_MatSgtatusPara.LoggerSerialNo );		strcat( http_tmp,tmp );
 	sprintf( tmp,"\"IMEI\":%s,"					,DLC_MatSgtatusPara.IMEI );					strcat( http_tmp,tmp );
@@ -753,7 +764,6 @@ void DLCMatPostStatus()
 	sprintf( tmp,"\"Temp\":%f,"					,DLC_MatSgtatusPara.Temp );					strcat( http_tmp,tmp );
  	sprintf( tmp,"\"TxType\":%f"				,DLC_MatSgtatusPara.TxType );				strcat( http_tmp,tmp );
 	strcat( http_tmp,"}}" );
-//	i = (int)(strchr(http_tmp,'}')-strchr(http_tmp,'{'));
 	i = (int)(strchr(http_tmp,'}')-strstr(http_tmp,"{\"Status\":{"))+1;
 	if( i > 0 ){
 		p = strstr( http_tmp,"Length:    " );
@@ -777,19 +787,23 @@ void DLCMatPostStatus()
 		DLCMatSend( DLC_MatSendBuff );
 	}
 }
-void DLCMatPostReport()
+/*
+	機能：Reportを通知、SPI-Flashに溜まっているReportを通知
+	Parameter:通知する数
+*/
+void DLCMatPostReport(int num)
 {
 	char	tmp[48],n,*p;
 	int		i;
 	strcpy( http_tmp,http_Head );
-//	strcat( http_tmp,"{" );
 	strcat( http_tmp,"{\"Report\":{" );
-	sprintf( tmp,"\"Time\":%s,"			,DLC_MatReportData[0].Time );				strcat( http_tmp,tmp );
+	char	s[20];	
+	DLCMatClockDisplay(s);
+	sprintf( tmp,"\"Time\":%s,"			,s );										strcat( http_tmp,tmp );
 	sprintf( tmp,"\"Value_ch1\":%f,"	,DLC_MatReportData[0].Value_ch1 );			strcat( http_tmp,tmp );
 	sprintf( tmp,"\"Value_ch2\":%f,"	,DLC_MatReportData[0].Value_ch2 );			strcat( http_tmp,tmp );
-	sprintf( tmp,"\"Alert\":%c%c,"		,DLC_MatReportData[0].Alert[0],DLC_MatReportData[0].Alert[1] );				strcat( http_tmp,tmp );
+	sprintf( tmp,"\"Alert\":%c%c,"		,DLC_MatReportData[0].Alert[0],DLC_MatReportData[0].Alert[1] );	strcat( http_tmp,tmp );
 	strcat( http_tmp,"}}" );
-//	i = (int)(strchr(http_tmp,'}')-strchr(http_tmp,'{'));
 	i = (int)(strchr(http_tmp,'}')-strstr(http_tmp,"{\"Report\":{"))+1;
 	if( i > 0 ){
 		p = strstr( http_tmp,"Length:    " );
