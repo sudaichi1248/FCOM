@@ -783,21 +783,21 @@ children:
     - type: Values
       children:
       - type: Dynamic
-        attributes: {id: core, value: 'false'}
+        attributes: {id: core, value: 'true'}
   - type: String
     attributes: {id: NVIC_20_0_HANDLER}
     children:
     - type: Values
       children:
       - type: Dynamic
-        attributes: {id: core, value: TC5_Handler}
+        attributes: {id: core, value: TC5_TimerInterruptHandler}
   - type: Boolean
     attributes: {id: NVIC_20_0_HANDLER_LOCK}
     children:
     - type: Values
       children:
       - type: Dynamic
-        attributes: {id: core, value: 'false'}
+        attributes: {id: core, value: 'true'}
   - type: Boolean
     attributes: {id: NVIC_2_0_ENABLE}
     children:
@@ -2491,7 +2491,7 @@ children:
     - type: Values
       children:
       - type: Dynamic
-        attributes: {id: core, value: 'true'}
+        attributes: {id: core, value: 'false'}
   - type: Boolean
     attributes: {id: PORT_GROUP_0_PIN_10_USED}
     children:
@@ -2568,7 +2568,7 @@ children:
     - type: Values
       children:
       - type: Dynamic
-        attributes: {id: core, value: 'true'}
+        attributes: {id: core, value: 'false'}
   - type: Boolean
     attributes: {id: PORT_GROUP_0_PIN_20_USED}
     children:
@@ -3365,28 +3365,28 @@ children:
     - type: Values
       children:
       - type: Dynamic
-        attributes: {id: tc5, value: 'false'}
+        attributes: {id: tc5, value: 'true'}
   - type: Boolean
     attributes: {id: TC5_INTERRUPT_ENABLE_UPDATE}
     children:
     - type: Values
       children:
       - type: Dynamic
-        attributes: {id: core, value: 'true'}
+        attributes: {id: core, value: 'false'}
   - type: String
     attributes: {id: TC5_INTERRUPT_HANDLER}
     children:
     - type: Values
       children:
       - type: Dynamic
-        attributes: {id: tc5, value: TC5_Handler}
+        attributes: {id: tc5, value: TC5_TimerInterruptHandler}
   - type: Boolean
     attributes: {id: TC5_INTERRUPT_HANDLER_LOCK}
     children:
     - type: Values
       children:
       - type: Dynamic
-        attributes: {id: tc5, value: 'false'}
+        attributes: {id: tc5, value: 'true'}
   - type: Boolean
     attributes: {id: USB_CLOCK_ENABLE}
     children:

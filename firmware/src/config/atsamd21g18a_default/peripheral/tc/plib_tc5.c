@@ -63,6 +63,7 @@
 // *****************************************************************************
 // *****************************************************************************
 
+static TC_TIMER_CALLBACK_OBJ TC5_CallbackObject;
 
 // *****************************************************************************
 // *****************************************************************************
@@ -85,14 +86,15 @@ void TC5_TimerInitialize( void )
     /* Configure counter mode & prescaler */
     TC5_REGS->COUNT16.TC_CTRLA = TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV1024 | TC_CTRLA_WAVEGEN_MPWM ;
 
-    /* Configure timer one shot mode */
-    TC5_REGS->COUNT16.TC_CTRLBSET = TC_CTRLBSET_ONESHOT_Msk;
     /* Configure timer period */
-    TC5_REGS->COUNT16.TC_CC[0U] = 937U;
+    TC5_REGS->COUNT16.TC_CC[0U] = 468U;
 
     /* Clear all interrupt flags */
     TC5_REGS->COUNT16.TC_INTFLAG = TC_INTFLAG_Msk;
 
+    TC5_CallbackObject.callback = NULL;
+    /* Enable interrupt*/
+    TC5_REGS->COUNT16.TC_INTENSET = TC_INTENSET_OVF_Msk;
 
 
     while((TC5_REGS->COUNT16.TC_STATUS & TC_STATUS_SYNCBUSY_Msk)!= 0U)
@@ -104,12 +106,6 @@ void TC5_TimerInitialize( void )
 /* Enable the TC counter */
 void TC5_TimerStart( void )
 {
-    /* In one-shot timer mode, first disable the timer */
-    TC5_REGS->COUNT16.TC_CTRLA = ((TC5_REGS->COUNT16.TC_CTRLA) & (uint16_t)(~TC_CTRLA_ENABLE_Msk));
-    while((TC5_REGS->COUNT16.TC_STATUS & TC_STATUS_SYNCBUSY_Msk)!= 0U)
-    {
-        /* Wait for Write Synchronization */
-    }
     TC5_REGS->COUNT16.TC_CTRLA |= TC_CTRLA_ENABLE_Msk;
     while((TC5_REGS->COUNT16.TC_STATUS & TC_STATUS_SYNCBUSY_Msk)!= 0U)
     {
@@ -192,10 +188,24 @@ uint16_t TC5_Timer16bitPeriodGet( void )
 
 
 
-/* Polling method to check if timer period interrupt flag is set */
-bool TC5_TimerPeriodHasExpired( void )
+/* Register callback function */
+void TC5_TimerCallbackRegister( TC_TIMER_CALLBACK callback, uintptr_t context )
 {
-    uint8_t timer_status = ((TC5_REGS->COUNT16.TC_INTFLAG) & TC_INTFLAG_OVF_Msk);
-    TC5_REGS->COUNT16.TC_INTFLAG = timer_status;
-    return (timer_status != 0U);
+    TC5_CallbackObject.callback = callback;
+
+    TC5_CallbackObject.context = context;
 }
+
+/* Timer Interrupt handler */
+void TC5_TimerInterruptHandler( void )
+{
+    TC_TIMER_STATUS status;
+    status = (TC_TIMER_STATUS) (TC5_REGS->COUNT16.TC_INTFLAG);
+    /* Clear interrupt flags */
+    TC5_REGS->COUNT16.TC_INTFLAG = TC_INTFLAG_Msk;
+    if(TC5_CallbackObject.callback != NULL)
+    {
+        TC5_CallbackObject.callback(status, TC5_CallbackObject.context);
+    }
+}
+

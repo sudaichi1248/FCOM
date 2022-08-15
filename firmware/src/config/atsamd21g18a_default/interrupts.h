@@ -69,6 +69,7 @@ void SERCOM3_I2C_InterruptHandler (void);
 void SERCOM5_USART_InterruptHandler (void);
 void TC3_TimerInterruptHandler (void);
 void TC4_TimerInterruptHandler (void);
+void TC5_TimerInterruptHandler (void);
 
 
 
