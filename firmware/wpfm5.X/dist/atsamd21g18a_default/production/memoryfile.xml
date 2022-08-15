@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <executable name="dist/atsamd21g18a_default/production/wpfm5.X.production.elf">
+    <memory name="program">
+      <units>bytes</units>
+      <length>262144</length>
+      <used>39179</used>
+      <free>222965</free>
+    </memory>
+    <memory name="data">
+      <units>bytes</units>
+      <length>32768</length>
+      <used>19394</used>
+      <free>13374</free>
+    </memory>
+  </executable>
+</project>
