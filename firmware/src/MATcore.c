@@ -1108,6 +1108,9 @@ void DLCkarugamoTest()
 {
 	uint8_t c;
 	char    key;
+	char *VerPrint();
+	putst( VerPrint() );
+	putst( "\r\nMATcore Task Started." );
 	DLCMatInit();
 	PORT_GroupWrite( PORT_GROUP_1,0x1<<22,0 );
 	while(1){
