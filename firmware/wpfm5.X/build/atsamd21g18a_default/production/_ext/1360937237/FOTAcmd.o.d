@@ -1,5 +1,5 @@
-build/atsamd21g18a_default/production/_ext/1360937237/MATcore.o: \
- ../src/MATcore.c ../src/config/atsamd21g18a_default/definitions.h \
+build/atsamd21g18a_default/production/_ext/1360937237/FOTAcmd.o: \
+ ../src/FOTAcmd.c ../src/config/atsamd21g18a_default/definitions.h \
  ../src/config/atsamd21g18a_default/peripheral/sercom/i2c_master/plib_sercom3_i2c_master.h \
  ../src/config/atsamd21g18a_default/peripheral/sercom/i2c_master/plib_sercom_i2c_master_common.h \
  ../src/config/atsamd21g18a_default/device.h \
@@ -121,7 +121,7 @@ build/atsamd21g18a_default/production/_ext/1360937237/MATcore.o: \
  ../src/config/atsamd21g18a_default/osal/osal_definitions.h \
  ../src/config/atsamd21g18a_default/osal/osal_impl_basic.h \
  ../src/config/atsamd21g18a_default/system/debug/sys_debug.h ../src/app.h \
- ../src/moni.h ../src/gpioexp.h ../src/rtc.h ../src/w25q128jv.h
+ ../src/moni.h ../src/gpioexp.h ../src/w25q128jv.h
 
 ../src/config/atsamd21g18a_default/definitions.h:
 
@@ -372,7 +372,5 @@ build/atsamd21g18a_default/production/_ext/1360937237/MATcore.o: \
 ../src/moni.h:
 
 ../src/gpioexp.h:
-
-../src/rtc.h:
 
 ../src/w25q128jv.h:

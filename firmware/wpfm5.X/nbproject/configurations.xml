@@ -329,8 +329,8 @@
       <itemPath>../src/app.c</itemPath>
       <itemPath>../src/MATcore.c</itemPath>
       <itemPath>../src/moni.c</itemPath>
-      <itemPath>../src/FOTAcmd.c</itemPath>
       <itemPath>../src/version.c</itemPath>
+      <itemPath>../src/FOTAcmd.c</itemPath>
     </logicalFolder>
     <logicalFolder name="ExternalFiles"
                    displayName="Important Files"
