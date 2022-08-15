@@ -794,17 +794,25 @@ void DLCMatPostStatus()
 void DLCMatPostReport(int num)
 {
 	char	tmp[48],n,*p;
+	char	s[20];	
 	int		i;
 	strcpy( http_tmp,http_Head );
 	strcat( http_tmp,"{\"Report\":{" );
-	char	s[20];	
+	strcat( http_tmp,"\"LoggerSerialNo\": 3423423}," );
+	strcat( http_tmp,"\"ReportList\": [{" );
 	DLCMatClockDisplay(s);
 	sprintf( tmp,"\"Time\":%s,"			,s );										strcat( http_tmp,tmp );
 	sprintf( tmp,"\"Value_ch1\":%f,"	,DLC_MatReportData[0].Value_ch1 );			strcat( http_tmp,tmp );
 	sprintf( tmp,"\"Value_ch2\":%f,"	,DLC_MatReportData[0].Value_ch2 );			strcat( http_tmp,tmp );
 	sprintf( tmp,"\"Alert\":%c%c,"		,DLC_MatReportData[0].Alert[0],DLC_MatReportData[0].Alert[1] );	strcat( http_tmp,tmp );
-	strcat( http_tmp,"}}" );
-	i = (int)(strchr(http_tmp,'}')-strstr(http_tmp,"{\"Report\":{"))+1;
+	strcat( http_tmp,"},{" );
+	DLCMatClockDisplay(s);
+	sprintf( tmp,"\"Time\":%s,"			,s );										strcat( http_tmp,tmp );
+	sprintf( tmp,"\"Value_ch1\":%f,"	,DLC_MatReportData[0].Value_ch1 );			strcat( http_tmp,tmp );
+	sprintf( tmp,"\"Value_ch2\":%f,"	,DLC_MatReportData[0].Value_ch2 );			strcat( http_tmp,tmp );
+	sprintf( tmp,"\"Alert\":%c%c,"		,DLC_MatReportData[0].Alert[0],DLC_MatReportData[0].Alert[1] );	strcat( http_tmp,tmp );
+	strcat( http_tmp,"},]}" );
+	i = (int)(strchr(http_tmp,']')-strstr(http_tmp,"{\"Report\":{"))+1;
 	if( i > 0 ){
 		p = strstr( http_tmp,"Length:    " );
 		if( p < 0 ){
