@@ -20,8 +20,10 @@ void Moni();
 void DLCMatConfigDefault(),DLCMatStatusDefault(),DLCMatReortDefault();
 void DLCMatPostConfig(),DLCMatPostStatus(),DLCMatPostReport();
 void DLCMatTimerset(int tmid,int cnt );
+void DLCMatWgetFile();	// fota FOTAファイルwget
 extern	char s_command_version[];
 int DLCMatRecvDisp();
+int DLCMatRecvDispFota();	// fota FOTAデータ書込み処理
 char 	zLogOn=1;
 char 	DLC_MatSleep;
 char 	DLC_MatResBuf[2000];
@@ -34,6 +36,16 @@ char	DLC_MatRadioDensty[64];
 char	DLC_MatNUM[16];
 char	DLC_MatIMEI[16];
 int		DLC_MatTmid;
+bool	DLC_MatFotaExe=false;	// fota FOTA実行フラグ
+// bool	DLC_MatFotaExe=true;	// fota FOTA実行フラグ
+int	 	DLC_MatSPIFlashPage=256;	// fota SPIフラッシュ1ページbyte数
+int	 	DLC_MatSPIRemaindataFota;	// fota 1ページ未満の半端byte数→保持して次回書込み
+int	 	DLC_MatSPIWritePageFota;	// fota SPI書込みページインデックス
+char	DLC_MatSPIRemainbufFota[256];	// fota 1ページ未満の半端byte保持バッファ
+static char wget_Head[] = "GET /wpfm.bin HTTP/1.1\r\nHost:harvest-files.soracom.io\r\nUser-Agent: Wget\r\nConnection: close\r\n\r\n";	// fota FOTAデータ指定
+// static char wget_Head[] = "GET /2048.bin HTTP/1.1\r\nHost:harvest-files.soracom.io\r\nUser-Agent: Wget\r\nConnection: close\r\n\r\n";	// fota
+// static char wget_Head[] = "GET /256.bin HTTP/1.1\r\nHost:harvest-files.soracom.io\r\nUser-Agent: Wget\r\nConnection: close\r\n\r\n";	// fota
+
 struct {
 	int	cnt;
 } DLC_MatTimer;
@@ -229,8 +241,11 @@ void MTimei()
 void MTapn()
 {
 	DLC_MatLineIdx = 0;
-//	DLCMatSend( "AT$SETSERVER,karugamosoft.ddo.jp,9999\r" );
-	DLCMatSend( "AT$SETSERVER,beam.soracom.io,8888\r" );
+	if (DLC_MatFotaExe == false) {	// fota 運用時
+		DLCMatSend( "AT$SETSERVER,beam.soracom.io,8888\r" );
+	} else {	// FOTA実行時
+		DLCMatSend( "AT$SETSERVER,harvest-files.soracom.io,80\r" );	// fota soracom harvest指定
+	}
 	DLCMatTimerset( 0,300 );
 	DLC_MatState = MATC_STATE_SVR;
 }
@@ -246,7 +261,11 @@ void MTcong()
 	DLC_MatLineIdx = 0;
 	DLCMatSend( "AT$CONNECT?\r" );
 	DLCMatTimerset( 0,3000 );
-	DLC_MatState = MATC_STATE_COND;
+	if (DLC_MatFotaExe == false) {	// fota 運用時
+		DLC_MatState = MATC_STATE_COND;
+	} else {	//  FOTA実行時
+		DLC_MatState = MATC_STATE_FOTA;	// fota FOTA stateへ
+	}
 }
 void MTtime()
 {
@@ -268,6 +287,12 @@ void MTopn1()
 	DLCMatTimerset( 0,1500 );
 	DLC_MatState = MATC_STATE_OPN1;
 }
+void MTopnF()	// fota
+{
+	DLC_MatLineIdx = 0;
+	DLCMatSend( "AT$OPEN\r" );
+	DLCMatTimerset( 0,1500 );
+}
 void MTcnfg()
 {
 	DLC_MatLineIdx = 0;
@@ -275,10 +300,31 @@ void MTcnfg()
 	DLCMatTimerset( 0,3000 );
 	DLC_MatState = MATC_STATE_CNFG;
 }
+void MTwget()	// fota
+{
+	DLC_MatLineIdx = 0;
+	DLCMatWgetFile();
+	DLCMatTimerset( 0,3000 );
+}
 void MTdata()
 {
 	int	rt;
 	rt = DLCMatRecvDisp();
+	putst("RecvRet=");puthxs( rt );putcrlf();
+	if( rt == 0 ){
+		DLC_MatLineIdx = 0;
+		zLogOn = 1;
+	}
+	else {
+		DLC_MatLineIdx = 0;
+		DLCMatSend( "AT$RECV,1024\r" );
+	}
+}
+void MTfirm()	// fota
+{
+	int	rt;
+	DLCMatTimerset( 0,1000 );	/* 10秒タイマー起動(要検討) */
+	rt = DLCMatRecvDispFota();	/* SPIへ受信データ書込み処理 */
 	putst("RecvRet=");puthxs( rt );putcrlf();
 	if( rt == 0 ){
 		DLC_MatLineIdx = 0;
@@ -378,12 +424,12 @@ void	 (*MTjmp[17][19])() = {
 /* $VER		   2 */{ ______, MTVer,  ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
 /* $NUM		   3 */{ ______, ______, MTimei, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
 /* OK          4 */{ ______, ______, ______, MTapn,  MTserv, MTcong, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
-/* $CONNECT:1  5 */{ ______, ______, ______, ______, ______, ______, MTtime, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
+/* $CONNECT:1  5 */{ ______, ______, ______, ______, ______, ______, MTtime, ______, ______, ______, ______, ______, ______, ______, MTopnF, ______, ______, ______, ______ },
 /* $TIME       6 */{ ______, ______, ______, ______, ______, ______, MTrsrp, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
 /* $RSRP       7 */{ ______, ______, ______, ______, ______, ______, MTopn1, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
-/* $OPEN       8 */{ ______, ______, ______, ______, ______, ______, ______, MTcnfg, ______, MTstst, ______, MTrprt, ______, MTserv, ______, ______, ______, ______, ______ },
+/* $OPEN       8 */{ ______, ______, ______, ______, ______, ______, ______, MTcnfg, ______, MTstst, ______, MTrprt, ______, MTserv, MTwget, ______, ______, ______, ______ },
 /* $CLOSE      9 */{ ______, ______, ______, ______, ______, ______, ______, ______, MTcls1, ______, MTcls2, ______, MTcls3, ______, ______, ______, ______, ______, ______ },
-/* $RECVDATA  10 */{ ______, ______, ______, ______, ______, ______, ______, ______, MTdata, ______, MTdata, ______, MTdata, ______, ______, ______, ______, ______, ______ },
+/* $RECVDATA  10 */{ ______, ______, ______, ______, ______, ______, ______, ______, MTdata, ______, MTdata, ______, MTdata, ______, MTfirm, ______, ______, ______, ______ },
 /* $CONNECT:0 11 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, MTdisc, ______, ______, ______, ______, ______, ______ },
 /* TimOut     12 */{ MTRdy,  MTVrT,  MTVer,  MTimei, MTapn,  MTserv, ______, ______, ______, ______, ______, ______, ______, MTslp1, ______, ______, ______, ______, ______ },
 /* WAKEUP     13 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, MTwake, ______, ______, ______, ______, ______ },
@@ -835,6 +881,24 @@ void DLCMatPostReport(int num)
 		DLCMatSend( DLC_MatSendBuff );
 	}
 }
+void DLCMatWgetFile()	// fota
+{
+	char	tmp[48],n;
+	int		i;
+	putst("WgetExe!!!");putcrlf();
+	strcpy( http_tmp,wget_Head );	/* soracom harvestへwget */
+	putst( http_tmp );putcrlf();
+	strcpy( DLC_MatSendBuff,"AT$SEND,\"" );
+	tmp[2] = 0;
+	for( i=0;http_tmp[i]!=0;i++ ){
+		n = http_tmp[i];
+		tmp[0] = outhex( n>>4 );
+		tmp[1] = outhex( n&0x0f );
+		strcat( DLC_MatSendBuff,tmp );
+	}
+	strcat( DLC_MatSendBuff,"\"\r" );
+	DLCMatSend( DLC_MatSendBuff );
+}
 int DLCMatRecvDisp()
 {
 	char	*p,n;
@@ -863,6 +927,10 @@ int DLCMatRecvDisp()
 //				if( strstr( DLC_MatResBuf,"Connection: close" ))
 //					return 0;
 //			}
+// fota			if (strstr(DLC_MatResBuf, "\"LTEVersion\":")) {	// fota StatusでF/W version指定されたらFOTA起動?
+// fota				DLC_MatFotaExe = true;
+// fota				// フラグを維持したまま再起動したい
+// fota			}
 			if( j == 0 ){
 				DLC_MatResBuf[DLC_MatResIdx] = 0;
 				putst( DLC_MatResBuf );
@@ -872,6 +940,145 @@ int DLCMatRecvDisp()
 //				strcpy( &DLC_MatResBuf[DLC_MatResIdx],"★" );
 //				DLC_MatResIdx += 2;
 			}
+			return j;
+		}
+		else {
+			putst("format err4\r\n");
+			return -4;
+		}
+	}
+	else
+		putst("format err1\r\n");
+	return -1;
+}
+int DLCMatRecvDispFota()	// fota SPIへ受信データ書込み処理
+{
+	char	*p,*fpt,n;
+	int		i,j=0,k,len;
+	int		fotaaddress=0;	/* 現状0番地(test) */
+//	int		fotaaddress=0xd60000;	/* 本番? */
+	if(( p = strstr( (char*)DLC_MatLineBuf,"$RECVDATA:" )) > 0 ){
+		p = str2int( &p[10],&i );										/* $RECVDATA,i,j,"...."<cr> */
+		if( p < 0 ){													/* p            q  */
+			putst( "format err2\r\n" );
+			return -2;
+		}
+		p = str2int( p,&j );
+		if( p < 0 ){
+			putst( "format err3\r\n" );
+			return -3;
+		}
+		putst("Ln=");puthxs(i);putst(" Rm=");puthxs(j);putcrlf();
+		p = strchr( p,'\"' );
+		if( p > 0 ){
+			p++;
+			memset(DLC_MatResBuf, 0, sizeof(DLC_MatResBuf));	/* 受信バッファ0初期化 */
+			for( k=0;k<i;k++ ){
+				n = inhex( *p++ )<<4;
+				n += inhex( *p++ );
+				DLC_MatResBuf[DLC_MatResIdx++] = n;
+			}
+			DLC_MatResBuf[DLC_MatResIdx] = 0;
+			putst( DLC_MatResBuf );
+			DLC_MatResIdx = 0;
+			if (strstr(DLC_MatResBuf,"Connection: close") == NULL) {	/* ヘッダにConnection: closeなし=先頭以降の受信データ */
+				fpt = DLC_MatResBuf;		/* 受信バッファの先頭アドレス */
+				len = DLC_MatSPIRemaindataFota;	/* 半端byteのレングス */
+				if (j > 0) {
+					putst("RecvData1:\r\n");Dump(DLC_MatResBuf,0x400);putcrlf();
+					fotaaddress /= DLC_MatSPIFlashPage;
+					if (DLC_MatSPIRemaindataFota != 0) {	/* 半端byteありの場合 */
+						memcpy(&DLC_MatSPIRemainbufFota[DLC_MatSPIRemaindataFota], fpt ,sizeof(DLC_MatSPIRemainbufFota) - DLC_MatSPIRemaindataFota);	/* 今回受信データで256byte埋めて */
+						if (W25Q128JV_programPage(fotaaddress + DLC_MatSPIWritePageFota, 0, (uint8_t*)DLC_MatSPIRemainbufFota, DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){	/* 256byte書込む */
+							puthxw(DLC_MatSPIFlashPage * (fotaaddress + DLC_MatSPIWritePageFota));
+							putst("_R:OK");putcrlf();
+						} else {
+							putst("PROG NG\r\n");
+						}
+						fpt = &DLC_MatResBuf[sizeof(DLC_MatSPIRemainbufFota) - DLC_MatSPIRemaindataFota];	/* 書込みアドレス進める */
+						DLC_MatSPIWritePageFota += 1;	/* 書込みページインデックス進める */
+						putst("BufData1:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
+					}
+					for (k = 0; k < ((0x400 - len) / DLC_MatSPIFlashPage); k++) {	/* 残りのデータを256byte毎書込み */
+						if (W25Q128JV_programPage(fotaaddress + k + DLC_MatSPIWritePageFota, 0, (uint8_t*)(fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){
+							puthxw(DLC_MatSPIFlashPage * (fotaaddress + k + DLC_MatSPIWritePageFota));
+							putst(":OK");putcrlf();
+						} else {
+							putst("PROG NG\r\n");
+						}
+					}
+					memset(DLC_MatSPIRemainbufFota, 0, sizeof(DLC_MatSPIRemainbufFota));	/* 半端byte保持バッファ0初期化 */
+					DLC_MatSPIRemaindataFota = (0x400 - (DLC_MatSPIFlashPage - len)) - (DLC_MatSPIFlashPage * k);	/* 1ページ未満の半端byte数 */
+//					putst("DLC_MatSPIRemaindataFota1:");puthxs(DLC_MatSPIRemaindataFota);putcrlf();
+					memcpy(DLC_MatSPIRemainbufFota, fpt + DLC_MatSPIFlashPage * k ,DLC_MatSPIRemaindataFota);	/* 半端byte保持バッファに保持 */
+					DLC_MatSPIWritePageFota = k + DLC_MatSPIWritePageFota;	/* SPI書込みページインデックス保持 */
+					putst("RemainData1:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
+				} else {
+					putst("RecvData2:\r\n");Dump(DLC_MatResBuf,i);putcrlf();
+					fotaaddress /= DLC_MatSPIFlashPage;
+					if (DLC_MatSPIRemaindataFota != 0) {
+						memcpy(&DLC_MatSPIRemainbufFota[DLC_MatSPIRemaindataFota], fpt ,sizeof(DLC_MatSPIRemainbufFota) - DLC_MatSPIRemaindataFota);	/* 今回受信データで256byte埋めて */
+						if (W25Q128JV_programPage(fotaaddress + DLC_MatSPIWritePageFota, 0, (uint8_t*)DLC_MatSPIRemainbufFota, DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){	/* 256byte書込む */
+							puthxw(DLC_MatSPIFlashPage * (fotaaddress + DLC_MatSPIWritePageFota));
+							putst("_R:OK");putcrlf();
+						} else {
+							putst("PROG NG\r\n");
+						}
+						fpt = &DLC_MatResBuf[sizeof(DLC_MatSPIRemainbufFota) - DLC_MatSPIRemaindataFota];	/* 書込みアドレス進める */
+						DLC_MatSPIWritePageFota += 1;	/* 書込みページインデックス進める */
+						putst("BufData2:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
+					}
+					for (k = 0; k <= ((i - (DLC_MatSPIFlashPage - len)) / DLC_MatSPIFlashPage); k++) {	/* 残りのデータを256byte毎書込み */
+						if (W25Q128JV_programPage(fotaaddress + k + DLC_MatSPIWritePageFota, 0, (uint8_t*)(fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){
+							puthxw(DLC_MatSPIFlashPage * (fotaaddress + k + DLC_MatSPIWritePageFota));
+							putst(":OK");putcrlf();
+						} else {
+							putst("PROG NG\r\n");
+						}
+					}
+				}
+			} else {	/* ヘッダにConnection: closeあり=受信データ先頭 */
+				for (k = 0; k < 4; k++) {	/* SPI 256kbyte消去 */
+					char line[20];
+					W25Q128JV_eraseBlock64(((fotaaddress / 0x10000) + k), true);	/* 現状address:0～ 1ブロック64kbyte*/
+					sprintf( line, "%X:ERASE OK\r\n",(unsigned int)((fotaaddress / 0x10000) + k) );
+					putst( line );
+				}
+				memset(DLC_MatSPIRemainbufFota, 0, sizeof(DLC_MatSPIRemainbufFota));	/* 1ページ未満の半端byte保持バッファ0初期化 */
+				DLC_MatSPIRemaindataFota = 0;
+				fpt = strstr(DLC_MatResBuf,"Connection: close") + strlen("Connection: close\r\n\r\n");	/* FOTAデータの先頭アドレス */
+				*(fpt - 1) = 0;	// strlenのため
+				len = strlen(DLC_MatResBuf) + 1;	/* ヘッダのレングス */
+				if (j > 0) {	/* データが1024byte以上の場合 */
+					putst("RecvData3:\r\n");Dump(fpt, 0x400 - len);putcrlf();
+					fotaaddress /= DLC_MatSPIFlashPage;
+					for (k = 0; k < ((0x400 - len) / DLC_MatSPIFlashPage); k++) {	/* ヘッダを抜いたFOTAデータを256byte毎書込み */
+						if (W25Q128JV_programPage(fotaaddress + k, 0, (uint8_t*)(fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){
+							puthxw(DLC_MatSPIFlashPage * (fotaaddress + k));
+							putst(":OK");putcrlf();
+						} else {
+							putst("PROG NG\r\n");
+						}
+					}
+					DLC_MatSPIRemaindataFota = (0x400 - len) - (DLC_MatSPIFlashPage * k);	/* 1ページ未満の半端byte数 */
+//					putst("DLC_MatSPIRemaindataFota3:");puthxs(DLC_MatSPIRemaindataFota);putcrlf();
+					memcpy(DLC_MatSPIRemainbufFota, fpt + DLC_MatSPIFlashPage * k ,DLC_MatSPIRemaindataFota);	/* 半端byte保持バッファに保持 */
+					DLC_MatSPIWritePageFota = k;	/* SPI書込みページインデックス保持 */
+					putst("RemainData3:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
+				} else {	/* データが1024byte未満の場合(現状ありえない) */
+					putst("RecvData4:\r\n");Dump(fpt, i - len);putcrlf();
+					fotaaddress /= DLC_MatSPIFlashPage;
+					for (k = 0; k <= ((i - len) / DLC_MatSPIFlashPage); k++) {
+						if (W25Q128JV_programPage(fotaaddress + k, 0, (uint8_t*)(fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){
+							puthxw(DLC_MatSPIFlashPage * (fotaaddress + k));
+							putst(":OK");putcrlf();
+						} else {
+							putst("PROG NG\r\n");
+						}
+					}
+				}
+			}
+			DLC_MatResIdx = 0;
 			return j;
 		}
 		else {
@@ -994,7 +1201,7 @@ void DLCMatTest()
 void DLCFlashTest()
 {
 #if 0
-	int		rt;
+	int		rt,k;
 	char    key;
 	while(1){
 		uint8_t DmyData[256],Data[256];
@@ -1097,6 +1304,13 @@ void DLCFlashTest()
 				}
 			}
 			break;
+		case 'B':
+			for (k = 0; k < 4; k++) {	/* 0-3ブロック消去 */
+				char line[20];
+				W25Q128JV_eraseBlock64(k, true);
+				sprintf( line, "%X:ERASE OK\r\n",(unsigned int)k );
+				putst( line );
+			}
 		case 0x03:
 		case 0x1b:
 			return;
