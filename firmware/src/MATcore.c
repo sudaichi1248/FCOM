@@ -44,6 +44,7 @@ int	 	DLC_MatSPIFlashPage=256;	// fota SPIフラッシュ1ページbyte数
 int	 	DLC_MatSPIRemaindataFota;	// fota 1ページ未満の半端byte数→保持して次回書込み
 int	 	DLC_MatSPIWritePageFota;	// fota SPI書込みページインデックス
 char	DLC_MatSPIRemainbufFota[256];	// fota 1ページ未満の半端byte保持バッファ
+char	DLC_MatSPICheckbufFota[256];	// fota ベリファイ用バッファ
 static char wget_Head[] = "GET /wpfm.bin HTTP/1.1\r\nHost:harvest-files.soracom.io\r\nUser-Agent: Wget\r\nConnection: close\r\n\r\n";	// fota FOTAデータ指定
 // static char wget_Head[] = "GET /2048.bin HTTP/1.1\r\nHost:harvest-files.soracom.io\r\nUser-Agent: Wget\r\nConnection: close\r\n\r\n";	// fota
 // static char wget_Head[] = "GET /256.bin HTTP/1.1\r\nHost:harvest-files.soracom.io\r\nUser-Agent: Wget\r\nConnection: close\r\n\r\n";	// fota
@@ -997,6 +998,16 @@ int DLCMatRecvDispFota()	// fota SPIへ受信データ書込み処理
 						if (W25Q128JV_programPage(fotaaddress + DLC_MatSPIWritePageFota, 0, (uint8_t*)DLC_MatSPIRemainbufFota, DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){	/* 256byte書込む */
 							puthxw(DLC_MatSPIFlashPage * (fotaaddress + DLC_MatSPIWritePageFota));
 							putst("_R:OK");putcrlf();
+							memset(DLC_MatSPICheckbufFota, 0, sizeof(DLC_MatSPICheckbufFota));
+							if (W25Q128JV_readData(DLC_MatSPIFlashPage * (fotaaddress + DLC_MatSPIWritePageFota), (uint8_t*)DLC_MatSPICheckbufFota, DLC_MatSPIFlashPage) == W25Q128JV_ERR_NONE) {
+								if (memcmp(DLC_MatSPICheckbufFota, DLC_MatSPIRemainbufFota, DLC_MatSPIFlashPage) == 0) {
+									putst("VERFY OK\r\n");
+								} else {
+									putst("VERFY NG\r\n");
+								}
+							} else {
+								putst("READ NG\r\n");
+							}
 						} else {
 							putst("PROG NG\r\n");
 						}
@@ -1008,6 +1019,16 @@ int DLCMatRecvDispFota()	// fota SPIへ受信データ書込み処理
 						if (W25Q128JV_programPage(fotaaddress + k + DLC_MatSPIWritePageFota, 0, (uint8_t*)(fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){
 							puthxw(DLC_MatSPIFlashPage * (fotaaddress + k + DLC_MatSPIWritePageFota));
 							putst(":OK");putcrlf();
+							memset(DLC_MatSPICheckbufFota, 0, sizeof(DLC_MatSPICheckbufFota));
+							if (W25Q128JV_readData(DLC_MatSPIFlashPage * (fotaaddress + k + DLC_MatSPIWritePageFota), (uint8_t*)DLC_MatSPICheckbufFota, DLC_MatSPIFlashPage) == W25Q128JV_ERR_NONE) {
+								if (memcmp(DLC_MatSPICheckbufFota, (fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage) == 0) {
+									putst("VERFY OK\r\n");
+								} else {
+									putst("VERFY NG\r\n");
+								}
+							} else {
+								putst("READ NG\r\n");
+							}
 						} else {
 							putst("PROG NG\r\n");
 						}
@@ -1019,14 +1040,24 @@ int DLCMatRecvDispFota()	// fota SPIへ受信データ書込み処理
 					DLC_MatSPIWritePageFota = k + DLC_MatSPIWritePageFota;	/* SPI書込みページインデックス保持 */
 //					putst("RemainData1:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
 				} else {
-					bool	err=false;
+					bool	err = false;
 					putst("RecvData2:\r\n");Dump(DLC_MatResBuf,i);putcrlf();
 					fotaaddress /= DLC_MatSPIFlashPage;
-					if (DLC_MatSPIRemaindataFota != 0) {
+					if (DLC_MatSPIRemaindataFota != 0) {	/* 半端byteありの場合 */
 						memcpy(&DLC_MatSPIRemainbufFota[DLC_MatSPIRemaindataFota], fpt ,sizeof(DLC_MatSPIRemainbufFota) - DLC_MatSPIRemaindataFota);	/* 今回受信データで256byte埋めて */
 						if (W25Q128JV_programPage(fotaaddress + DLC_MatSPIWritePageFota, 0, (uint8_t*)DLC_MatSPIRemainbufFota, DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){	/* 256byte書込む */
 							puthxw(DLC_MatSPIFlashPage * (fotaaddress + DLC_MatSPIWritePageFota));
 							putst("_R:OK");putcrlf();
+							memset(DLC_MatSPICheckbufFota, 0, sizeof(DLC_MatSPICheckbufFota));
+							if (W25Q128JV_readData(DLC_MatSPIFlashPage * (fotaaddress + DLC_MatSPIWritePageFota), (uint8_t*)DLC_MatSPICheckbufFota, DLC_MatSPIFlashPage) == W25Q128JV_ERR_NONE) {
+								if (memcmp(DLC_MatSPICheckbufFota, DLC_MatSPIRemainbufFota, DLC_MatSPIFlashPage) == 0) {
+									putst("VERFY OK\r\n");
+								} else {
+									putst("VERFY NG\r\n");
+								}
+							} else {
+								putst("READ NG\r\n");
+							}
 						} else {
 							putst("PROG NG\r\n");
 						}
@@ -1038,6 +1069,18 @@ int DLCMatRecvDispFota()	// fota SPIへ受信データ書込み処理
 						if (W25Q128JV_programPage(fotaaddress + k + DLC_MatSPIWritePageFota, 0, (uint8_t*)(fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){
 							puthxw(DLC_MatSPIFlashPage * (fotaaddress + k + DLC_MatSPIWritePageFota));
 							putst(":OK");putcrlf();
+							memset(DLC_MatSPICheckbufFota, 0, sizeof(DLC_MatSPICheckbufFota));
+							if (W25Q128JV_readData(DLC_MatSPIFlashPage * (fotaaddress + k + DLC_MatSPIWritePageFota), (uint8_t*)DLC_MatSPICheckbufFota, DLC_MatSPIFlashPage) == W25Q128JV_ERR_NONE) {
+								if (memcmp(DLC_MatSPICheckbufFota, (fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage) == 0) {
+									putst("VERFY OK\r\n");
+								} else {
+									err = true;
+									putst("VERFY NG\r\n");
+								}
+							} else {
+								err = true;
+								putst("READ NG\r\n");
+							}
 						} else {
 							err = true;
 							putst("PROG NG\r\n");
@@ -1066,6 +1109,16 @@ int DLCMatRecvDispFota()	// fota SPIへ受信データ書込み処理
 						if (W25Q128JV_programPage(fotaaddress + k, 0, (uint8_t*)(fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){
 							puthxw(DLC_MatSPIFlashPage * (fotaaddress + k));
 							putst(":OK");putcrlf();
+							memset(DLC_MatSPICheckbufFota, 0, sizeof(DLC_MatSPICheckbufFota));
+							if (W25Q128JV_readData(DLC_MatSPIFlashPage * (fotaaddress + k), (uint8_t*)DLC_MatSPICheckbufFota, DLC_MatSPIFlashPage) == W25Q128JV_ERR_NONE) {
+								if (memcmp(DLC_MatSPICheckbufFota, (fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage) == 0) {
+									putst("VERFY OK\r\n");
+								} else {
+									putst("VERFY NG\r\n");
+								}
+							} else {
+								putst("READ NG\r\n");
+							}
 						} else {
 							putst("PROG NG\r\n");
 						}
@@ -1076,15 +1129,32 @@ int DLCMatRecvDispFota()	// fota SPIへ受信データ書込み処理
 					DLC_MatSPIWritePageFota = k;	/* SPI書込みページインデックス保持 */
 //					putst("RemainData3:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
 				} else {	/* データが1024byte未満の場合(現状ありえない) */
+					bool	err = false;
 					putst("RecvData4:\r\n");Dump(fpt, i - len);putcrlf();
 					fotaaddress /= DLC_MatSPIFlashPage;
 					for (k = 0; k <= ((i - len) / DLC_MatSPIFlashPage); k++) {
 						if (W25Q128JV_programPage(fotaaddress + k, 0, (uint8_t*)(fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){
 							puthxw(DLC_MatSPIFlashPage * (fotaaddress + k));
 							putst(":OK");putcrlf();
+							memset(DLC_MatSPICheckbufFota, 0, sizeof(DLC_MatSPICheckbufFota));
+							if (W25Q128JV_readData(DLC_MatSPIFlashPage * (fotaaddress + k), (uint8_t*)DLC_MatSPICheckbufFota, DLC_MatSPIFlashPage) == W25Q128JV_ERR_NONE) {
+								if (memcmp(DLC_MatSPICheckbufFota, (fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage) == 0) {
+									putst("VERFY OK\r\n");
+								} else {
+									err = true;
+									putst("VERFY NG\r\n");
+								}
+							} else {
+								err = true;
+								putst("READ NG\r\n");
+							}
 						} else {
+							err = true;
 							putst("PROG NG\r\n");
 						}
+					}
+					if (err == false) {	/* 書込みエラーなし */
+						DLCMatTimerClr( 0 );	/* タイマークリア */
 					}
 				}
 			}
