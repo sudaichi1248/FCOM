@@ -38,6 +38,8 @@ char	DLC_MatIMEI[16];
 int		DLC_MatTmid;
 bool	DLC_MatFotaExe=false;	// fota FOTA実行フラグ
 // bool	DLC_MatFotaExe=true;	// fota FOTA実行フラグ
+int	 	DLC_MatSPIFlashAddrFota=0;	// fota SPIフラッシュ書込みアドレス(現状0)
+// int	 	DLC_MatSPIFlashAddrFota=0xd60000;	// fota SPIフラッシュ書込みアドレス
 int	 	DLC_MatSPIFlashPage=256;	// fota SPIフラッシュ1ページbyte数
 int	 	DLC_MatSPIRemaindataFota;	// fota 1ページ未満の半端byte数→保持して次回書込み
 int	 	DLC_MatSPIWritePageFota;	// fota SPI書込みページインデックス
@@ -390,6 +392,10 @@ void MTwake()
 	putst("【Wake】\r\n");
 	PORT_GroupWrite( PORT_GROUP_1,0x1<<10,-1 );						/* Wake! */
 }
+void MTtoF()	// FOTA T/O
+{
+	// 実行フラグそのままでリセットしリトライ?
+}
 struct {
 	uchar	wx;
 	uchar	rx;
@@ -431,7 +437,7 @@ void	 (*MTjmp[17][19])() = {
 /* $CLOSE      9 */{ ______, ______, ______, ______, ______, ______, ______, ______, MTcls1, ______, MTcls2, ______, MTcls3, ______, ______, ______, ______, ______, ______ },
 /* $RECVDATA  10 */{ ______, ______, ______, ______, ______, ______, ______, ______, MTdata, ______, MTdata, ______, MTdata, ______, MTfirm, ______, ______, ______, ______ },
 /* $CONNECT:0 11 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, MTdisc, ______, ______, ______, ______, ______, ______ },
-/* TimOut     12 */{ MTRdy,  MTVrT,  MTVer,  MTimei, MTapn,  MTserv, ______, ______, ______, ______, ______, ______, ______, MTslp1, ______, ______, ______, ______, ______ },
+/* TimOut     12 */{ MTRdy,  MTVrT,  MTVer,  MTimei, MTapn,  MTserv, ______, ______, ______, ______, ______, ______, ______, MTslp1, MTtoF,  ______, ______, ______, ______ },
 /* WAKEUP     13 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, MTwake, ______, ______, ______, ______, ______ },
 /* FOTA       14 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
 /* FTP        15 */{ ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______, ______ },
@@ -955,8 +961,7 @@ int DLCMatRecvDispFota()	// fota SPIへ受信データ書込み処理
 {
 	char	*p,*fpt,n;
 	int		i,j=0,k,len;
-	int		fotaaddress=0;	/* 現状0番地(test) */
-//	int		fotaaddress=0xd60000;	/* 本番? */
+	int		fotaaddress=DLC_MatSPIFlashAddrFota;	/* 現状0番地(test) */
 	if(( p = strstr( (char*)DLC_MatLineBuf,"$RECVDATA:" )) > 0 ){
 		p = str2int( &p[10],&i );										/* $RECVDATA,i,j,"...."<cr> */
 		if( p < 0 ){													/* p            q  */
@@ -997,7 +1002,7 @@ int DLCMatRecvDispFota()	// fota SPIへ受信データ書込み処理
 						}
 						fpt = &DLC_MatResBuf[sizeof(DLC_MatSPIRemainbufFota) - DLC_MatSPIRemaindataFota];	/* 書込みアドレス進める */
 						DLC_MatSPIWritePageFota += 1;	/* 書込みページインデックス進める */
-						putst("BufData1:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
+//						putst("BufData1:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
 					}
 					for (k = 0; k < ((0x400 - len) / DLC_MatSPIFlashPage); k++) {	/* 残りのデータを256byte毎書込み */
 						if (W25Q128JV_programPage(fotaaddress + k + DLC_MatSPIWritePageFota, 0, (uint8_t*)(fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){
@@ -1012,8 +1017,9 @@ int DLCMatRecvDispFota()	// fota SPIへ受信データ書込み処理
 //					putst("DLC_MatSPIRemaindataFota1:");puthxs(DLC_MatSPIRemaindataFota);putcrlf();
 					memcpy(DLC_MatSPIRemainbufFota, fpt + DLC_MatSPIFlashPage * k ,DLC_MatSPIRemaindataFota);	/* 半端byte保持バッファに保持 */
 					DLC_MatSPIWritePageFota = k + DLC_MatSPIWritePageFota;	/* SPI書込みページインデックス保持 */
-					putst("RemainData1:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
+//					putst("RemainData1:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
 				} else {
+					bool	err=false;
 					putst("RecvData2:\r\n");Dump(DLC_MatResBuf,i);putcrlf();
 					fotaaddress /= DLC_MatSPIFlashPage;
 					if (DLC_MatSPIRemaindataFota != 0) {
@@ -1026,22 +1032,26 @@ int DLCMatRecvDispFota()	// fota SPIへ受信データ書込み処理
 						}
 						fpt = &DLC_MatResBuf[sizeof(DLC_MatSPIRemainbufFota) - DLC_MatSPIRemaindataFota];	/* 書込みアドレス進める */
 						DLC_MatSPIWritePageFota += 1;	/* 書込みページインデックス進める */
-						putst("BufData2:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
+//						putst("BufData2:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
 					}
 					for (k = 0; k <= ((i - (DLC_MatSPIFlashPage - len)) / DLC_MatSPIFlashPage); k++) {	/* 残りのデータを256byte毎書込み */
 						if (W25Q128JV_programPage(fotaaddress + k + DLC_MatSPIWritePageFota, 0, (uint8_t*)(fpt + DLC_MatSPIFlashPage * k), DLC_MatSPIFlashPage, true) == W25Q128JV_ERR_NONE ){
 							puthxw(DLC_MatSPIFlashPage * (fotaaddress + k + DLC_MatSPIWritePageFota));
 							putst(":OK");putcrlf();
 						} else {
+							err = true;
 							putst("PROG NG\r\n");
 						}
+					}
+					if (err == false) {	/* 書込みエラーなし */
+						DLCMatTimerClr( 0 );	/* タイマークリア */
 					}
 				}
 			} else {	/* ヘッダにConnection: closeあり=受信データ先頭 */
 				for (k = 0; k < 4; k++) {	/* SPI 256kbyte消去 */
-					char line[20];
+					char line[32];
 					W25Q128JV_eraseBlock64(((fotaaddress / 0x10000) + k), true);	/* 現状address:0～ 1ブロック64kbyte*/
-					sprintf( line, "%X:ERASE OK\r\n",(unsigned int)((fotaaddress / 0x10000) + k) );
+					sprintf( line, "%02X0000:ERASE OK\r\n",(unsigned int)((fotaaddress / 0x10000) + k) );
 					putst( line );
 				}
 				memset(DLC_MatSPIRemainbufFota, 0, sizeof(DLC_MatSPIRemainbufFota));	/* 1ページ未満の半端byte保持バッファ0初期化 */
@@ -1064,7 +1074,7 @@ int DLCMatRecvDispFota()	// fota SPIへ受信データ書込み処理
 //					putst("DLC_MatSPIRemaindataFota3:");puthxs(DLC_MatSPIRemaindataFota);putcrlf();
 					memcpy(DLC_MatSPIRemainbufFota, fpt + DLC_MatSPIFlashPage * k ,DLC_MatSPIRemaindataFota);	/* 半端byte保持バッファに保持 */
 					DLC_MatSPIWritePageFota = k;	/* SPI書込みページインデックス保持 */
-					putst("RemainData3:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
+//					putst("RemainData3:\r\n");Dump(DLC_MatSPIRemainbufFota, sizeof(DLC_MatSPIRemainbufFota));putcrlf();
 				} else {	/* データが1024byte未満の場合(現状ありえない) */
 					putst("RecvData4:\r\n");Dump(fpt, i - len);putcrlf();
 					fotaaddress /= DLC_MatSPIFlashPage;
